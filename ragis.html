@@ -6,7 +6,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
-    #map { height: 100vh; }
+    #map { height: 100vh; margin: 0; }
+    body { margin: 0; }
   </style>
 </head>
 <body>
@@ -14,25 +15,27 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
-
-    const map = L.map('map').setView([42.6977, 23.3219], 14); // Център: София
+    const map = L.map('map').setView([42.6977, 23.3219], 14);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
 
-    // Зареждане на маршрута от GeoJSON
-    fetch('route.geojson') 
+    fetch('route.geojson')
       .then(response => response.json())
       .then(data => {
-        L.geoJSON(data, {
+        const routeLayer = L.geoJSON(data, {
           style: {
             color: 'red',
             weight: 5
           }
         }).addTo(map);
-      });
 
+        map.fitBounds(routeLayer.getBounds());
+      })
+      .catch(error => {
+        console.error('Грешка при зареждане на GeoJSON файла:', error);
+      });
   </script>
 </body>
 </html>
