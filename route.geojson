@@ -1,0 +1,32 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Примерен безопасен маршрут"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            23.319906,
+            42.696841
+          ],
+          [
+            23.320556,
+            42.697212
+          ],
+          [
+            23.321122,
+            42.697594
+          ],
+          [
+            23.321612,
+            42.698
+          ]
+        ]
+      }
+    }
+  ]
+}
