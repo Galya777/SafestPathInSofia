@@ -2,40 +2,190 @@
 <html lang="bg">
 <head>
   <meta charset="UTF-8">
-  <title>Най-безопасен маршрут в София</title>
+  <title>Нощен безопасен маршрут за студенти в София</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder@2.4.0/dist/Control.Geocoder.css" />
   <style>
     #map { height: 100vh; margin: 0; }
-    body { margin: 0; }
+    body { margin: 0; font-family: Arial, sans-serif; }
+    .legend {
+      background: white;
+      padding: 12px;
+      line-height: 1.5;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+    }
+    .legend h4 { margin: 0 0 8px; font-size: 14px; }
+    .legend-item { display: flex; align-items: center; margin: 4px 0; }
+    .legend-color { width: 20px; height: 3px; margin-right: 8px; }
+    .info-box {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: white;
+      padding: 15px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+      max-width: 300px;
+      z-index: 1000;
+    }
+    .info-box h3 { margin: 0 0 10px; font-size: 16px; color: #333; }
+    .info-box p { margin: 5px 0; font-size: 13px; color: #666; }
+    .start-btn {
+      background: #2196F3;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-top: 10px;
+    }
+    .start-btn:hover { background: #1976D2; }
+    .loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(255,255,255,0.9);
+      padding: 20px;
+      border-radius: 8px;
+      z-index: 2000;
+    }
   </style>
 </head>
 <body>
   <div id="map"></div>
-
+  <div class="loading" id="loading" style="display:none;">Зареждане на маршрута...</div>
+  
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-control-geocoder@2.4.0/dist/Control.Geocoder.js"></script>
+  <script src="https://unpkg.com/leaflet-arcgis-terrain@1.0.0/dist/leaflet-arcgis-terrain.js"></script>
+  
   <script>
-    const map = L.map('map').setView([42.6977, 23.3219], 14);
-
+    const map = L.map('map').setView([42.6977, 23.3219], 13);
+    
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap contributors'
+      attribution: '&copy; OpenStreetMap contributors',
+      maxZoom: 19
     }).addTo(map);
-
-    fetch('route.geojson')
-      .then(response => response.json())
-      .then(data => {
-        const routeLayer = L.geoJSON(data, {
-          style: {
-            color: 'red',
-            weight: 5
+    
+    const safetyLegend = L.control({position: 'bottomright'});
+    safetyLegend.onAdd = function() {
+      const div = L.DomUtil.create('div', 'legend');
+      div.innerHTML = `
+        <h4>Нощна безопасност</h4>
+        <div class="legend-item"><div class="legend-color" style="background:#4CAF50"></div> Ниски риск</div>
+        <div class="legend-item"><div class="legend-color" style="background:#FF9800"></div> Средни риск</div>
+        <div class="legend-item"><div class="legend-color" style="background:#F44336"></div> Високи риск</div>
+        <hr style="margin:8px 0">
+        <small>Кликнете върху картата за да изберете начална/крайна точка</small>
+      `;
+      return div;
+    };
+    safetyLegend.addTo(map);
+    
+    const infoBox = L.control({position: 'topright'});
+    infoBox.onAdd = function() {
+      const div = L.DomUtil.create('div', 'info-box');
+      div.innerHTML = `
+        <h3>🌙 Нощен маршрут за студенти</h3>
+        <p>Този маршрут избягва тъмни пътища и предпочита улици с добро осветление и близост до обществен транспорт.</p>
+        <p><strong>Обща дължина:</strong> <span id="total-length">--</span></p>
+        <p><strong>Оценка за безопасност:</strong> <span id="safety-score">--</span></p>
+      `;
+      return div;
+    };
+    infoBox.addTo(map);
+    
+    let routeLayer;
+    let startPoint, endPoint;
+    let markers = [];
+    
+    function getColorByRisk(riskLevel) {
+      return riskLevel === 'low' ? '#4CAF50' : 
+             riskLevel === 'medium' ? '#FF9800' : '#F44336';
+    }
+    
+    function loadRoute() {
+      document.getElementById('loading').style.display = 'block';
+      
+      fetch('route.geojson')
+        .then(response => response.json())
+        .then(data => {
+          if (routeLayer) map.removeLayer(routeLayer);
+          
+          routeLayer = L.geoJSON(data, {
+            style: function(feature) {
+              return {
+                color: getColorByRisk(feature.properties.risk_level || 'medium'),
+                weight: 6,
+                opacity: 0.8
+              };
+            },
+            onEachFeature: function(feature, layer) {
+              const props = feature.properties;
+              layer.bindPopup(`
+                <b>Пътен сегмент</b><br>
+                Дължина: ${props.length_m || 0} м<br>
+                Цена за безопасност: ${props.safety_cost || 0}<br>
+                Риск: ${props.risk_level || 'неизвестен'}
+              `);
+            }
+          }).addTo(map);
+          
+          if (data.features.length > 0) {
+            map.fitBounds(routeLayer.getBounds(), {padding: [50, 50]});
+            
+            const totalLength = data.features.reduce((sum, f) => sum + (f.properties.length_m || 0), 0);
+            const avgSafety = data.features.reduce((sum, f) => sum + (f.properties.safety_cost || 0), 0) / data.features.length;
+            
+            document.getElementById('total-length').textContent = (totalLength / 1000).toFixed(2) + ' км';
+            document.getElementById('safety-score').textContent = avgSafety.toFixed(1);
           }
-        }).addTo(map);
-
-        map.fitBounds(routeLayer.getBounds());
-      })
-      .catch(error => {
-        console.error('Грешка при зареждане на GeoJSON файла:', error);
-      });
+        })
+        .catch(error => {
+          console.error('Грешка при зареждане:', error);
+          alert('Грешка при зареждане на маршрута. Моля, стартирайте с локален сървър.');
+        })
+        .finally(() => {
+          document.getElementById('loading').style.display = 'none';
+        });
+    }
+    
+    map.on('click', function(e) {
+      if (!startPoint) {
+        startPoint = e.latlng;
+        markers.push(L.marker([e.latlng.lat, e.latlng.lng], {
+          icon: L.divIcon({
+            className: 'start-marker',
+            html: '📍',
+            iconSize: [30, 30]
+          })
+        }).addTo(map).bindPopup('<b>Начална точка</b>').openPopup();
+      } else if (!endPoint) {
+        endPoint = e.latlng;
+        markers.push(L.marker([e.latlng.lat, e.latlng.lng], {
+          icon: L.divIcon({
+            className: 'end-marker',
+            html: '🏁',
+            iconSize: [30, 30]
+          })
+        }).addTo(map).bindPopup('<b>Крайна точка</b>').openPopup();
+        
+        setTimeout(() => {
+          if (confirm(`Изчисли ли маршрут от ${startPoint.lat.toFixed(4)},${startPoint.lng.toFixed(4)} до ${endPoint.lat.toFixed(4)},${endPoint.lng.toFixed(4)}?`)) {
+            loadRoute();
+          }
+          startPoint = null;
+          endPoint = null;
+          markers.forEach(m => map.removeLayer(m));
+          markers = [];
+        }, 500);
+      }
+    });
+    
+    loadRoute();
   </script>
 </body>
 </html>
